@@ -129,10 +129,16 @@ def extract(text: str, allowed_entity_types: list[str], allowed_relation_types: 
     {"span_text": "engine", "start_token": 2, "end_token": 3, "type": "PhysicalObject/DrivingObject/CombustionEngine", "confidence": "high"}
   ],
   "relations": [
-    {"head_span": "engine", "tail_span": "change out", "type": "hasParticipant/hasPatient"}
+    {"head_span": "change out", "tail_span": "engine", "type": "hasParticipant/hasPatient"}
   ]
 }
 ```
+
+*(Corrected 2026-09-11: this example originally had head_span/tail_span reversed —
+`hasParticipant/hasPatient` runs event→participant, e.g. "change out" (the activity)
+→ "engine" (what it acts on), never the other way. This was inconsistent with both the
+§3.1 example above and the actual gold corpus, where that direction holds across all
+1,076 texts with zero exceptions.)*
 
 Design decisions:
 - **`confidence` field is required output**, even though MaintIE's gold data doesn't have one — this is what makes the extraction defensible/citable later (matches the evidence-trail principle from the tender project). Low-confidence extractions should be flagged for review in the report, not silently included in pattern-mining.
