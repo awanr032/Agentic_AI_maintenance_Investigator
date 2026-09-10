@@ -239,7 +239,11 @@ def _call_deepseek(system_prompt: str, user_prompt: str) -> str:
         raise RuntimeError("DEEPSEEK_API_KEY is not set — copy .env.example to .env and fill it in.")
     client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
     response = client.chat.completions.create(
-        model="deepseek-chat",
+        # "deepseek-chat" (CLAUDE.md's original model choice) was retired
+        # 2026-07-24 — "deepseek-flash" is the current cheap/general model
+        # (confirmed against api-docs.deepseek.com; verify again if this
+        # starts erroring, DeepSeek's naming has already changed once).
+        model="deepseek-flash",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
