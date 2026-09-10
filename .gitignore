@@ -1,0 +1,21 @@
+# secrets — never commit these
+.env
+*.key
+
+# generated data (extraction/validation/pattern output) — regeneratable, keep repo light
+extracted/
+validated/
+scores/
+patterns/
+report/*.html
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# downloaded dataset — fetch via scripts/, don't commit
+data/gold_release.json
+data/silver_release.json
+data/SCHEME.md
