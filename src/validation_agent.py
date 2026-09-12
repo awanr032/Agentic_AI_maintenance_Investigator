@@ -101,16 +101,26 @@ def _check_types_in_taxonomy(
 
 def _check_duplicate_or_overlapping_spans(extraction: ExtractionResult) -> list[str]:
     """Flag entities whose token ranges overlap — v1 doesn't model nested/
-    overlapping entities (see design-spec.md §9 open question 2), so any
-    overlap here is treated as suspicious rather than intentional."""
+    overlapping entities in general (see design-spec.md §9 open question 2),
+    so any overlap here is treated as suspicious rather than intentional,
+    with one deliberate exception: extraction_agent.py's prompt now teaches
+    a compound-noun decomposition pattern (e.g. "bend pulley" isA "pulley")
+    where one span is a token-subsequence of the other BY DESIGN. An overlap
+    between exactly the two spans an "isA" relation connects is that pattern
+    working as intended, not an error, so it's excluded here rather than
+    flagged every single time the Extraction Agent does the right thing."""
     issues: list[str] = []
     seen: list[tuple[int, int, int]] = []
+    isa_pairs = {frozenset((r.head_span, r.tail_span)) for r in extraction.relations if r.type == "isA"}
     for i, e in enumerate(extraction.entities):
         for start, end, j in seen:
             if e.start_token < end and start < e.end_token:
+                other = extraction.entities[j]
+                if frozenset((e.span_text, other.span_text)) in isa_pairs:
+                    continue  # the deliberate decomposition pattern, not an error
                 issues.append(
                     f'entity {i} ("{e.span_text}", tokens {e.start_token}-{e.end_token}) overlaps '
-                    f'entity {j} ("{extraction.entities[j].span_text}", tokens {start}-{end})'
+                    f'entity {j} ("{other.span_text}", tokens {start}-{end})'
                 )
         seen.append((e.start_token, e.end_token, i))
     return issues
