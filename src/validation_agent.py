@@ -199,6 +199,15 @@ You are a QA reviewer for an entity/relation extraction pipeline over short main
 work order (MWO) texts, following the MaintIE annotation scheme. You are reviewing ONE \
 extraction result someone else already produced — you are NOT re-extracting from scratch.
 
+One MaintIE convention you should NOT flag as an error: when a multi-word noun phrase \
+names one object at increasing specificity (a modifier plus a head noun, e.g. "bend \
+pulley", where "pulley" is the general head noun and "bend" narrows it), it's correct — \
+not a fabricated entity — for BOTH the full phrase AND the bare head noun to appear as \
+separate entities, connected by an "isA" relation (full phrase isA head noun). The head \
+noun being a token-subsequence of the full phrase is expected there, not a sign the \
+shorter span is fake or "not a separate mention". The same applies to "hasPart" between \
+a named larger unit and a named sub-part in the same phrase (e.g. "PTO" hasPart "shaft").
+
 You will be given the source text, the entities/relations already extracted (with their \
 types and confidence levels), and a list of issues an automated check already found.
 
