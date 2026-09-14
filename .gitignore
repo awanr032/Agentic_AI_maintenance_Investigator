@@ -8,8 +8,10 @@ validated/
 scores/
 patterns/
 corrections/
+report_drafts/
 report/*.html
 report/*.csv
+report/*.txt
 
 # python
 __pycache__/

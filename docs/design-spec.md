@@ -222,6 +222,10 @@ No database needed yet. Flat files are sufficient at this scale (~8,000 texts ma
 - `validated/{split}.jsonl` — one validation result per line, keyed by the same index
 - `scores/eval_report.json` — output of the scoring module
 - `patterns/findings.json` — output of the Pattern Agent
+- `corrections/{split}.jsonl` — human review decisions, keyed by source text index (§8.1)
+- `report_drafts/{split}.jsonl` — cached Drafting Agent output per pattern finding, keyed by
+  the finding's index in `patterns/findings.json`; `report/generate_report.py` reads this
+  cache instead of re-calling the Drafting Agent on every report rebuild
 
 Two hard requirements on this layer, both cheap now and painful to retrofit:
 
