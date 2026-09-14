@@ -168,7 +168,21 @@ def _call_deepseek(system_prompt: str, user_prompt: str) -> str:
         # No response_format="json_object" here -- the output is prose, not JSON,
         # unlike extraction_agent.py/validation_agent.py.
         temperature=0,
-        max_tokens=300,
+        # Real bug found and fixed here: with max_tokens=300 and thinking left enabled
+        # (deepseek-flash's default), this call was silently returning an EMPTY string
+        # for 8 of 15 real pattern-finding drafts in one run — finish_reason="length"
+        # because the model's internal reasoning pass (reasoning_content, billed as
+        # output tokens) consumed the entire 300-token budget before writing any actual
+        # answer. draft() had no check for this, so an empty response silently became
+        # "This pattern was not independently verified..." with the actual pattern
+        # content missing entirely — caught only because check_faithfulness() flagged
+        # groundedness=0.00 on the result. Fixed two ways: disabling thinking (see
+        # extraction_agent.py's note — also a real, separate cost reduction, unrelated
+        # to this bug) removes the reasoning-token consumption entirely; max_tokens is
+        # also raised as defense-in-depth in case a future model reintroduces reasoning
+        # by default.
+        extra_body={"thinking": {"type": "disabled"}},
+        max_tokens=500,
     )
     return response.choices[0].message.content or ""
 

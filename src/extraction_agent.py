@@ -255,6 +255,16 @@ def _call_deepseek(system_prompt: str, user_prompt: str) -> str:
         ],
         response_format={"type": "json_object"},  # requires the word "json" in the prompt — see SYSTEM_PROMPT_TEMPLATE
         temperature=0,
+        # deepseek-flash defaults to an internal "thinking"/reasoning pass (observed:
+        # 2,347 reasoning tokens for a 5-word input) that's billed as output tokens and
+        # isn't needed for this bounded extraction task — disabling it cuts real cost
+        # substantially (157 total tokens vs. thousands, observed on the same input) with
+        # no correctness loss seen in spot checks. Discovered while debugging drafting_agent.py
+        # silently returning empty output (finish_reason="length" — reasoning consumed the
+        # entire max_tokens budget before any content was written); this agent has no
+        # explicit max_tokens cap so it likely wasn't hitting that failure mode itself, but
+        # was still paying the reasoning-token cost on every single call this whole project.
+        extra_body={"thinking": {"type": "disabled"}},
     )
     return response.choices[0].message.content or ""
 

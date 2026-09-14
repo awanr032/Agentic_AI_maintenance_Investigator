@@ -157,7 +157,14 @@ def _run_deepseek(system_prompt: str, user_prompt: str, split: str) -> tuple[str
 
     for _ in range(MAX_TOOL_TURNS):
         response = client.chat.completions.create(
-            model="deepseek-flash", messages=messages, tools=tools, temperature=0
+            model="deepseek-flash",
+            messages=messages,
+            tools=tools,
+            temperature=0,
+            # see extraction_agent.py's note: deepseek-flash's default reasoning pass
+            # is unneeded overhead here (this loop already worked without it going
+            # wrong, but was paying the reasoning-token cost on every turn).
+            extra_body={"thinking": {"type": "disabled"}},
         )
         message = response.choices[0].message
         if not message.tool_calls:
@@ -180,7 +187,9 @@ def _run_deepseek(system_prompt: str, user_prompt: str, split: str) -> tuple[str
 
     # Ran out of turns without a final answer -- ask directly, no further tool calls implied.
     messages.append({"role": "user", "content": "Please respond now with your final JSON findings, no more tool calls."})
-    response = client.chat.completions.create(model="deepseek-flash", messages=messages, temperature=0)
+    response = client.chat.completions.create(
+        model="deepseek-flash", messages=messages, temperature=0, extra_body={"thinking": {"type": "disabled"}}
+    )
     return response.choices[0].message.content or "", observed
 
 

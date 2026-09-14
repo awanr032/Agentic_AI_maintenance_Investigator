@@ -258,6 +258,9 @@ def _call_deepseek(system_prompt: str, user_prompt: str) -> str:
         ],
         response_format={"type": "json_object"},  # requires the word "json" in the prompt — see SYSTEM_PROMPT
         temperature=0,
+        # see extraction_agent.py's note: deepseek-flash's default reasoning pass is
+        # unneeded overhead here and disabling it cuts real cost substantially.
+        extra_body={"thinking": {"type": "disabled"}},
     )
     return response.choices[0].message.content or ""
 
