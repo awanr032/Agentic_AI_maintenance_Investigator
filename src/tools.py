@@ -5,8 +5,9 @@ investigate and narrating the pattern, not computing the counts." Every
 function here is plain Python — no LLM calls, no randomness, same input
 always gives the same output.
 
-Reads validated results exclusively through src/store.py (never open()/
-json.load() directly on pipeline data, per CLAUDE.md).
+Reads the trusted record set exclusively through src/review_queue.py's
+effective_records() (which itself reads through src/store.py) — never
+open()/json.load() directly on pipeline data, per CLAUDE.md.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from typing import Any
 
-from src import store
+from src import review_queue
 
 _FAILURE_RELATION_TYPES = {"hasParticipant/hasAgent", "hasParticipant/hasPatient", "hasProperty"}
 _FAILURE_ENTITY_CLASSES = {"State", "Process"}
@@ -32,12 +33,20 @@ def _is_or_under(entity_type: str, asset_type: str) -> bool:
 
 
 def _validated_pass_records(split: str) -> dict[int, dict[str, Any]]:
-    """Extracted records for `split`, restricted to indices the Validation
-    Agent marked "pass" — design-spec.md §5.3: patterns are only mined from
-    trusted data."""
-    validated = dict(store.iter_records("validated", split))
-    extracted = dict(store.iter_records("extracted", split))
-    return {idx: extracted[idx] for idx, v in validated.items() if v.get("status") == "pass" and idx in extracted}
+    """Extracted records for `split` that are trusted for pattern-mining —
+    design-spec.md §5.3: patterns are only mined from trusted data.
+
+    Delegates to src/review_queue.py's effective_records(), which starts
+    from Validation Agent status=="pass" (the original v1 rule) and then
+    applies any human review decision on top: a reviewer's "reject"
+    excludes a record even if it was marked "pass" (catching the blind
+    spot a flag-only process can't — Extraction and Validation both
+    agreeing and both being wrong), an "accept" restores a flagged record
+    the reviewer judged fine, and a "fix" substitutes the reviewer's
+    corrected version. With no corrections recorded yet, this returns
+    exactly what the old inline logic did.
+    """
+    return review_queue.effective_records(split)
 
 
 def list_common_asset_types(split: str = "silver", top_n: int = 20) -> list[dict[str, Any]]:

@@ -263,16 +263,60 @@ agentic-ai-maintenance-investigator/
     drafting_agent.py            # §5.4
     tools.py                      # get_failure_history() and any other deterministic tools
     store.py                       # flat-file read/write per §6
+    review_queue.py                 # human-in-the-loop review layer, §8.1
   scripts/
     run_extraction.py          # batch-runs extraction over a split
     run_validation.py            # batch-runs validation over extraction output
     run_scoring.py                 # scores validated extractions vs gold
     run_patterns.py                  # runs Pattern Agent over validated data
     run_drafting.py                    # runs Drafting Agent over patterns and/or per-order findings
+    review.py                            # interactive human review CLI, §8.1
   report/
     generate_report.py                  # builds report.html from drafted output
   README.md                        # case study writeup (final deliverable)
 ```
+
+### 8.1 Human-in-the-loop review (added post-v1)
+
+Not part of the original six-module build order — added once real batch runs on gold and
+silver both showed a consistent ~20% flagged rate, and manual investigation of flagged
+items repeatedly found genuine, fixable extraction problems (the isA/hasPart decomposition
+issue documented in git history is the clearest example: found by hand, fixed by prompt
+edit, verified by re-running). That manual find→fix→verify cycle is the pattern this layer
+is built to support on an ongoing basis, not a one-time investigation.
+
+Design decisions, resolved deliberately:
+
+- **Review targets flagged items, plus a small (default 3%) random sample of PASSED
+  items — not every record.** Reviewing everything doesn't scale with corpus size,
+  defeating the point of automating extraction at all. But a flag-only review process has
+  a real blind spot it can never see on its own: a case where the Extraction Agent and
+  Validation Agent both agreed and were both wrong. The random spot-check on passed items
+  is the only way to catch that class of error.
+- **Three decisions, not a binary approve/reject**: `accept` (the flag was a false alarm —
+  keep the original), `reject` (exclude even a passed record — catches the blind spot
+  above), `fix` (substitute the reviewer's corrected extraction). A fix's corrected record
+  must be the same `{"text", "entities", "relations"}` shape `extract()` itself produces —
+  so it slots into downstream consumers with no special-casing.
+- **Corrections are additive, not destructive**: `src/review_queue.py`'s
+  `effective_records()` merges corrections on top of the original validated-pass set at
+  read time; the original `extracted/{split}.jsonl` and `validated/{split}.jsonl` files are
+  never rewritten. `src/tools.py` (and therefore the Pattern Agent) reads exclusively
+  through `effective_records()`, so a correction takes effect without touching pipeline
+  contracts elsewhere.
+- **The review queue is meant to shrink over time, not stay a fixed ongoing cost.** The
+  intended longer-term loop (not yet built — see below) is: recurring corrections get fed
+  back into the Extraction Agent's few-shot examples or prompt rules, the same way this
+  project's own manual investigations already did by hand three times. If the flagged rate
+  doesn't trend down as corrections accumulate, that is itself a signal the feedback loop
+  isn't working — not that more reviewers are needed.
+- **Not built yet, deliberately deferred**: automatic feedback of "fix" corrections into
+  `extraction_agent.py`'s few-shot examples (would need a policy for how many/which
+  corrected examples to include without bloating the prompt); routing based on
+  cross-provider disagreement (DeepSeek vs. Claude both extracting the same text, only
+  human-reviewing where they disagree) rather than a flat flagged/spot-check queue — a
+  smarter, likely smaller queue, but needs both providers actually run against the same
+  data first, which hasn't happened yet in this project.
 
 ## 9. Open questions to resolve before/during implementation
 

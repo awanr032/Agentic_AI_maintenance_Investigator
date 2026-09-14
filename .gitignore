@@ -7,7 +7,9 @@ extracted/
 validated/
 scores/
 patterns/
+corrections/
 report/*.html
+report/*.csv
 
 # python
 __pycache__/
