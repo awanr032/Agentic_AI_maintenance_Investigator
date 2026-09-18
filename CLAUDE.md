@@ -27,7 +27,7 @@ open questions that should be resolved deliberately, not guessed at silently.
    must never introduce a fact not present in its input. This is the most important
    correctness rule in the whole project — treat violations as bugs, not style issues.
 
-Query Agent and Recommendation Agent are explicitly phase 2 — do not build them yet.
+Query Agent was originally scoped as phase 2 here but has since been built (`src/query_agent.py`) — it turned out cheap to add once the core pipeline worked, reusing Pattern Agent's tools and architecture with no new extraction logic, and it only describes data rather than suggesting an action. Recommendation Agent remains explicitly phase 2 — do not build it yet (see docs/design-spec.md §10 for why it's deliberately last).
 
 ## Model / provider choices
 

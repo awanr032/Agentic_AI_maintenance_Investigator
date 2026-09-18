@@ -215,6 +215,31 @@ or for a pattern finding:
 
 **Acceptance criteria:** qualitative — manually spot-check a sample of drafted paragraphs against their source structured input; every claim in the prose should be traceable to a specific field in the input. Any invented detail is a failure of this agent, full stop — this is not a "mostly right" acceptance bar.
 
+### 5.5 Query Agent (moved up from §10 Phase 2, built post-v1)
+
+**Input:**
+```python
+def answer_question(question: str, split: str = "silver") -> QueryResult
+```
+
+**Output:**
+```python
+@dataclass
+class QueryResult:
+    question: str
+    answer: str                        # free-text, not a fixed template
+    supporting_facts: list[dict]        # every tool result observed while answering
+    grounded: bool                      # advisory only, see below
+```
+
+Free-form natural-language Q&A over the same trusted data Pattern Agent reads (validated-pass records via `review_queue.effective_records()`), reusing Pattern Agent's exact architecture: a multi-turn tool-calling loop against two deterministic tools (`list_common_asset_types`, `get_failure_history` — both already existed in `src/tools.py` for Pattern Agent; Query Agent added no new counting logic, only a second entry point onto it). Unlike Pattern Agent's fixed structured `PatternFinding` output, an answer here is free text, so there's no field-by-field verification possible — grounding is checked instead by requiring every number the answer states to trace back to an actual observed tool result (excluding numbers echoed from the question itself, e.g. "top 3").
+
+**Why this was safe to move up from Phase 2 ahead of the Recommendation Agent:** it only *describes* data (same as Pattern/Drafting), it never suggests an action — the liability/evidence-trail concern that keeps the Recommendation Agent deliberately last (§10) doesn't apply here.
+
+**Verified via a 30-question stress test** (`scripts/eval_query_agent.py`) spanning: real domain questions requiring ambiguous natural-language-to-taxonomy mapping ("pumps" → `LiquidFlowGeneratingObject`), asset types absent from the data (correctly declined, not fabricated), questions demanding precision the data can't support — cost, downtime hours, forecasts, MTBF (all correctly declined with an explanation of exactly what the tools don't contain), and fully out-of-scope questions (correctly declined). Run three times across ~90 total question-runs: zero fabricated facts found. One real bug was found and fixed this way — see git history ("Fix Query Agent retry discarding gathered tool context") — where a JSON-formatting retry discarded all tool results already gathered instead of preserving them, occasionally producing a misleadingly unhelpful non-answer despite having real data on hand.
+
+**Known limitation, not fixed:** the grounding check occasionally flags a benign number as "unverified" — e.g. the model summarizing several exact counts as an approximate range ("1-3 records each"), or citing a tool call's own parameter (`top_n=50`) rather than a data claim. This is a safe direction for a false positive (over-cautious, not under-cautious) and was left as-is rather than over-tuned.
+
 ## 6. Local data store (v1)
 
 No database needed yet. Flat files are sufficient at this scale (~8,000 texts max):
@@ -251,7 +276,10 @@ a known limit rather than leaving it implicit.
 
 - **RAG**: not needed for per-text extraction (texts are too short to need retrieval). Would become relevant if the Pattern Agent needs semantic matching across worded-differently failures at larger scale than keyword/structured grouping handles — defer until §5.2's structured grouping proves insufficient.
 - **MCP**: wrap `get_failure_history()` as an MCP tool once the local version works — this is a mechanical wrapping step, not a design change, so it's appropriately last.
-- **AWS**: S3 for raw + extracted data, Lambda or a single AgentCore Runtime for the two agents, only after the local pipeline's accuracy and pattern quality are validated.
+- **AWS — actually done (Extraction Agent only):** `infra/terraform/` provisions a real deployment: an IAM role scoped to exactly two permissions (CloudWatch logs, read one SSM parameter), the DeepSeek API key in SSM Parameter Store as a SecureString (never a plaintext Lambda env var), the Lambda function itself (`infra/lambda_build/lambda_handler.py` wraps `extraction_agent.py`'s `extract()` unchanged — AWS decides *where* the code runs, nothing about extraction itself changed), and a public Function URL with guardrails (input length cap, generic error responses so internals aren't leaked to an anonymous caller). Verified end-to-end via direct `aws lambda invoke`, matching local output exactly.
+  - **Known gap, not yet resolved**: the public Function URL itself returns 403 despite a provably correct IAM resource policy — most likely a new-AWS-account anti-abuse restriction on anonymous Function URL access (the account also showed a below-default concurrency limit of 10). Worked around by demoing via direct invocation (CLI/console) instead of a public URL; not blocking, since direct invocation is a normal, legitimate way to call a Lambda.
+  - **Not yet done**: Validation, Pattern, Drafting, and Query Agents are still local-only. Deploying any of them needs the local-filesystem-to-S3 migration below done first, since `tools.py`/`store.py` currently read local JSONL files that don't exist in Lambda's ephemeral filesystem.
+- **AWS — not yet done**: S3 for `store.py`'s JSONL data (needed before Pattern/Drafting/Query Agents can be deployed, not just Extraction), and a decision on Lambda vs. a single AgentCore Runtime for the multi-turn tool-calling agents specifically once that migration happens.
 
 ## 8. Suggested repo structure for Claude Code
 
@@ -265,6 +293,7 @@ agentic-ai-maintenance-investigator/
     scoring.py                 # deterministic precision/recall vs gold (validated subset)
     pattern_agent.py            # §5.3
     drafting_agent.py            # §5.4
+    query_agent.py                # §5.5, built post-v1
     tools.py                      # get_failure_history() and any other deterministic tools
     store.py                       # flat-file read/write per §6
     review_queue.py                 # human-in-the-loop review layer, §8.1
@@ -274,9 +303,14 @@ agentic-ai-maintenance-investigator/
     run_scoring.py                 # scores validated extractions vs gold
     run_patterns.py                  # runs Pattern Agent over validated data
     run_drafting.py                    # runs Drafting Agent over patterns and/or per-order findings
+    run_query.py                         # asks the Query Agent a single question, §5.5
+    eval_query_agent.py                    # 30-question stress test, §5.5
     review.py                            # interactive human review CLI, §8.1
   report/
     generate_report.py                  # builds report.html from drafted output
+  infra/
+    terraform/                          # IAM role, SSM parameter, Lambda function + URL, §7
+    lambda_build/lambda_handler.py       # thin Lambda adapter around extraction_agent.py's extract()
   README.md                        # case study writeup (final deliverable)
 ```
 
@@ -332,5 +366,5 @@ Design decisions, resolved deliberately:
 
 ## 10. Phase 2 (explicitly out of scope for this build)
 
-- **Query Agent**: ad-hoc natural-language questions against already-extracted/validated data, using the same `get_failure_history()` tool plus any additional read-only tools needed. Cheap to add once the core pipeline works, since it reuses existing tools rather than requiring new extraction logic.
-- **Recommendation Agent**: prescriptive suggestions (e.g. "consider shortening inspection interval") derived from Pattern Agent findings. Deliberately last — this is the point in the pipeline where output starts resembling advice rather than reporting, which raises the same evidence-trail and liability considerations discussed for the tender-investigator project's Bid/No-Bid Agent. Should not be built until the Drafting Agent's faithfulness (open question 5) is well understood.
+- **Query Agent**: ~~ad-hoc natural-language questions against already-extracted/validated data~~ — **built post-v1, see §5.5.** It turned out cheap to add exactly as predicted here (reused Pattern Agent's tools and architecture with no new extraction logic), and moved up ahead of the Recommendation Agent below because it only describes data, never suggests an action.
+- **Recommendation Agent**: prescriptive suggestions (e.g. "consider shortening inspection interval") derived from Pattern Agent findings. Still deliberately last — this is the point in the pipeline where output starts resembling advice rather than reporting, which raises the same evidence-trail and liability considerations discussed for the tender-investigator project's Bid/No-Bid Agent. Should not be built until the Drafting Agent's faithfulness (open question 5) is well understood. A concrete constraint identified in discussion: it would have to recommend an *action type* ("schedule an inspection") grounded in real occurrence data, but must not invent specifics the data can't support (e.g. a numeric inspection interval) — the same "hedge rather than fabricate" discipline already forced into the Extraction Agent's prompt.

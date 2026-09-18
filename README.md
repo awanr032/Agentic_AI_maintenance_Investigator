@@ -1,10 +1,60 @@
 # Agentic AI Maintenance Investigator
 
-Practice/portfolio project: a four-agent pipeline (Extraction → Validation → Pattern →
-Drafting) that turns short maintenance work order text into structured, evidence-backed
-findings, benchmarked against the public MaintIE dataset.
+Portfolio project: a five-agent pipeline that turns short, messy maintenance work order
+(MWO) text into structured, evidence-backed data — and lets you ask it questions about
+the failure patterns hiding in that data — benchmarked against the public MaintIE dataset.
 
-See `docs/design-spec.md` for the full design and `CLAUDE.md` for build conventions.
+**The five agents:**
+
+| Agent | What it does | Evidence discipline |
+|---|---|---|
+| **Extraction** | Per-text: raw MWO text → structured entities/relations | Every span must appear verbatim in the source text |
+| **Validation** | Deterministic structural checks on each extraction (taxonomy membership, dangling relations, overlaps) | No LLM judgment call trusted without a rule-based check behind it |
+| **Pattern** | Cross-text: finds recurring failure signatures using a real multi-turn tool-calling loop | Every finding verified against actual tool output before being reported — a fabricated count or example is dropped, not trusted on the model's word |
+| **Drafting** | Turns one structured finding into a short, bounded prose paragraph | Hard constraint: never introduces a fact not present in its input |
+| **Query** | Free-form question answering over the same trusted data Pattern Agent reads | Every number in an answer must trace back to an actual observed tool result |
+
+None of these agents talk to each other directly — they coordinate through a shared,
+auditable data store (`src/store.py`), each stage reading what the previous one wrote.
+See `docs/design-spec.md` §4 for the full architecture, and §5 for each agent's exact
+input/output contract.
+
+## Why this exists
+
+Real maintenance systems (CMMS software — Maximo, SAP PM, Fiix, UpKeep) accumulate years
+of free-text work order descriptions that are never systematically analyzed. This project
+demonstrates turning that unstructured text into structured, queryable data — without
+requiring technicians to change how they write work orders — plus an audit trail (every
+claim traceable to real evidence) for anyone who needs to trust the output.
+
+## Results
+
+Extraction accuracy was benchmarked against MaintIE's own published academic baseline
+(SpERT, LREC-COLING 2024) and iterated through 9+ documented find-fix-verify cycles (see
+git history) — taxonomy hallucinations, systematic type confusions, and a major hidden
+reasoning-token cost bug were all found by hand-investigating real mismatches, fixed with
+targeted evidenced prompt rules, and verified by re-running. Full numbers in
+`scores/eval_report.json` after running the pipeline (see Setup below).
+
+A human-in-the-loop review layer (`src/review_queue.py`, design-spec.md §8.1) catches the
+one class of error automated checks structurally can't: cases where Extraction and
+Validation both agreed and were both wrong.
+
+## Deployed
+
+The Extraction Agent runs live on AWS Lambda, provisioned via Terraform
+(`infra/terraform/`) — an IAM role scoped to exactly two permissions, the DeepSeek API key
+in SSM Parameter Store (never a plaintext env var), and guardrails (input length cap,
+generic error responses) appropriate for a metered API behind a public endpoint. Verified
+end-to-end via direct invocation, matching local output exactly. See
+`docs/design-spec.md` §7 for the full deployment writeup, including a known open issue
+(the public Function URL itself is currently blocked by what looks like a new-AWS-account
+anti-abuse restriction — worked around by calling it directly via CLI/console instead).
+
+The other four agents are built, tested, and demonstrated locally; deploying them needs a
+`store.py` → S3 migration first (documented as a known scaling limit in design-spec.md
+§6.3), since they currently read local JSONL files that don't exist in Lambda's ephemeral
+filesystem.
 
 ## Setup
 
@@ -13,6 +63,25 @@ cp .env.example .env   # then fill in your API key(s)
 pip install -r requirements.txt
 python scripts/fetch_data.py   # clones MaintIE's gold/silver data into data/
 ```
+
+## Running the pipeline
+
+Each stage is a separate batch script, run in order (later stages depend on earlier ones'
+output — see the Architecture section above):
+
+```bash
+python -m scripts.run_extraction --split silver
+python -m scripts.run_validation --split silver
+python -m scripts.run_scoring          # deterministic, no LLM calls
+python -m scripts.run_patterns --split silver
+python -m scripts.run_drafting --split silver
+
+# Ask the Query Agent a one-off question, anytime after extraction+validation have run:
+python -m scripts.run_query "What are the most common failures for pumps?" --split silver
+```
+
+`scripts/review.py` is the interactive human review CLI (design-spec.md §8.1).
+`report/generate_report.py` builds a static HTML report from drafted findings.
 
 ## Data attribution
 
