@@ -27,6 +27,8 @@ data/SCHEME.md
 # lambda deployment artifacts — rebuilt from src/, not source
 infra/lambda_build/package/
 infra/lambda_build/build.zip
+infra/lambda_build_query/package/
+infra/lambda_build_query/build.zip
 
 infra/terraform/payload.json
 infra/terraform/response.json
