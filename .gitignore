@@ -23,3 +23,10 @@ venv/
 data/gold_release.json
 data/silver_release.json
 data/SCHEME.md
+
+# lambda deployment artifacts — rebuilt from src/, not source
+infra/lambda_build/package/
+infra/lambda_build/build.zip
+
+infra/terraform/payload.json
+infra/terraform/response.json
