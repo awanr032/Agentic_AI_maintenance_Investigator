@@ -63,7 +63,11 @@ resource "aws_lambda_function" "query_agent" {
   role          = aws_iam_role.query_agent_lambda_exec.arn
   handler       = "lambda_handler.handler"
   runtime       = "python3.12"
-  timeout       = 30
+  # Higher than the Extraction Agent's 30s: this agent's tool calls scan a
+  # whole split via S3 (parallelized, but still real network I/O) rather
+  # than one DeepSeek call against local disk. Raised after a real timeout
+  # on the first live invocation, not preemptively.
+  timeout       = 60
   memory_size   = 512
 
   filename         = "${path.module}/../lambda_build_query/build.zip"

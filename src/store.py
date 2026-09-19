@@ -146,15 +146,34 @@ def iter_records(collection: str, split: str) -> Iterator[tuple[int, dict[str, A
     index, later PUTs simply overwrite).
     """
     if S3_BUCKET:
+        # Fetched in parallel, not one GET per record in a loop: a full-split
+        # scan (what tools.py's _validated_pass_records() does on EVERY tool
+        # call — the read pattern Pattern/Query Agent actually use, not an
+        # edge case) means ~500 individual network round-trips for the
+        # silver split. Sequentially that's slow enough to blow past even a
+        # generous Lambda timeout -- caught for real: the deployed Query
+        # Agent timed out at 30s on its first live question. A thread pool
+        # is safe here because these are independent, read-only GETs with no
+        # ordering dependency between them (the final sort below restores
+        # index order regardless of completion order).
+        import concurrent.futures
+
         keys: list[tuple[int, str]] = []
         paginator = _s3().get_paginator("list_objects_v2")
         for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=_s3_prefix(collection, split)):
             for obj in page.get("Contents", []):
                 filename = obj["Key"].rsplit("/", 1)[-1]
                 keys.append((int(filename[: -len(".json")]), obj["Key"]))
-        for index, key in sorted(keys):
+
+        def _fetch(item: tuple[int, str]) -> tuple[int, dict[str, Any]]:
+            index, key = item
             body = _s3().get_object(Bucket=S3_BUCKET, Key=key)["Body"].read()
-            yield index, json.loads(body)
+            return index, json.loads(body)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=32) as pool:
+            results = list(pool.map(_fetch, keys))
+        for index, record in sorted(results):
+            yield index, record
         return
 
     path = _jsonl_path(collection, split)
