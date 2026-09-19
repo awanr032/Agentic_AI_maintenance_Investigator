@@ -42,19 +42,29 @@ Validation both agreed and were both wrong.
 
 ## Deployed
 
-The Extraction Agent runs live on AWS Lambda, provisioned via Terraform
-(`infra/terraform/`) — an IAM role scoped to exactly two permissions, the DeepSeek API key
-in SSM Parameter Store (never a plaintext env var), and guardrails (input length cap,
-generic error responses) appropriate for a metered API behind a public endpoint. Verified
-end-to-end via direct invocation, matching local output exactly. See
-`docs/design-spec.md` §7 for the full deployment writeup, including a known open issue
-(the public Function URL itself is currently blocked by what looks like a new-AWS-account
-anti-abuse restriction — worked around by calling it directly via CLI/console instead).
+Two of the five agents run live on AWS Lambda, provisioned via Terraform
+(`infra/terraform/`):
 
-The other four agents are built, tested, and demonstrated locally; deploying them needs a
-`store.py` → S3 migration first (documented as a known scaling limit in design-spec.md
-§6.3), since they currently read local JSONL files that don't exist in Lambda's ephemeral
-filesystem.
+- **Extraction Agent** — IAM role scoped to exactly two permissions, the DeepSeek API key
+  in SSM Parameter Store (never a plaintext env var), and guardrails (input length cap,
+  generic error responses) appropriate for a metered API behind a public endpoint.
+- **Query Agent** — reads the validated corpus from S3 (`src/store.py`'s S3 backend,
+  populated via `scripts/migrate_store_to_s3.py`) instead of local disk. Its own,
+  separately-scoped IAM role (least privilege: only this agent can touch the S3 store).
+  Its first live test hit a real deployment bug — `tools.py` scans the whole split on every
+  tool call, which the one-object-per-record S3 layout turned into ~500 sequential network
+  round-trips, timing out at 30s. Fixed by parallelizing the reads (verified: 500 records in
+  ~4s) and raising the timeout to 60s as a margin, not a substitute for the fix.
+
+Both verified end-to-end via direct invocation, matching local output exactly. See
+`docs/design-spec.md` §7 for the full deployment writeup, including a known open issue
+shared by both (the public Function URL on each is currently blocked by what looks like a
+new-AWS-account anti-abuse restriction — worked around by calling them directly via
+CLI/console instead).
+
+Validation, Pattern, and Drafting Agents are built and tested locally but not yet deployed
+— Pattern and Drafting would reuse the same S3-backed `store.py` Query Agent already proves
+out; Validation would need its own Lambda following the same pattern as Extraction.
 
 ## Setup
 
