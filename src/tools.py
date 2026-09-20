@@ -20,6 +20,26 @@ from src import review_queue
 _FAILURE_RELATION_TYPES = {"hasParticipant/hasAgent", "hasParticipant/hasPatient", "hasProperty"}
 _FAILURE_ENTITY_CLASSES = {"State", "Process"}
 
+# Per-process cache of _validated_pass_records(), keyed by split. Pattern
+# Agent's normal behavior is calling get_failure_history() several times
+# per run for different asset types against the SAME split -- without this,
+# each of those calls independently re-reads the whole split. On the local
+# backend that's a cheap re-read of one file; on the S3 backend (see
+# store.py) it's a real, measured cost -- this is the same class of
+# redundant-refetch problem that caused the Query Agent Lambda's first live
+# timeout, applied here proactively because Pattern Agent's multi-type
+# investigation makes the redundant calls guaranteed, not just possible.
+_cache: dict[str, dict[int, dict[str, Any]]] = {}
+
+
+def clear_cache() -> None:
+    """Call once at the start of each top-level agent invocation (Lambda
+    handler, find_patterns(), answer_question()) so a warm container never
+    silently serves data from a previous, separate invocation. This cache
+    exists only to avoid redundant re-fetches WITHIN one investigation that
+    legitimately calls get_failure_history multiple times for one split."""
+    _cache.clear()
+
 
 def _is_or_under(entity_type: str, asset_type: str) -> bool:
     """True if entity_type == asset_type or is a taxonomy descendant of it.
@@ -45,8 +65,14 @@ def _validated_pass_records(split: str) -> dict[int, dict[str, Any]]:
     the reviewer judged fine, and a "fix" substitutes the reviewer's
     corrected version. With no corrections recorded yet, this returns
     exactly what the old inline logic did.
+
+    Cached per split for the lifetime of this process (see clear_cache())
+    — repeated calls for the same split within one investigation reuse the
+    first fetch instead of re-reading it from scratch every time.
     """
-    return review_queue.effective_records(split)
+    if split not in _cache:
+        _cache[split] = review_queue.effective_records(split)
+    return _cache[split]
 
 
 def list_common_asset_types(split: str = "silver", top_n: int = 20) -> list[dict[str, Any]]:

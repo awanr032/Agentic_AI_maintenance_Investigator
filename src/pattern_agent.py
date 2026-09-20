@@ -41,6 +41,7 @@ from typing import Any
 from dotenv import load_dotenv
 
 from src import store
+from src import tools
 from src.tools import get_failure_history, list_common_asset_types
 
 load_dotenv()
@@ -271,6 +272,7 @@ def find_patterns(split: str = "silver", num_candidates: int = 20) -> list[Patte
     batch-level modules (unlike extraction_agent.py/validation_agent.py,
     which are per-text and leave persistence to their batch scripts).
     """
+    tools.clear_cache()  # a warm Lambda container must never reuse a previous invocation's data
     candidates = list_common_asset_types(split=split, top_n=num_candidates)
     user_prompt = (
         f"Most common asset types in the validated {split} corpus (asset_type, count):\n"

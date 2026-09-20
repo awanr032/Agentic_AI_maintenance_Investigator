@@ -29,6 +29,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+from src import tools
 from src.tools import get_failure_history, list_common_asset_types
 
 load_dotenv()
@@ -335,6 +336,7 @@ def answer_question(question: str, split: str = "silver") -> QueryResult:
     document, a query's answer is only useful to the caller that asked it,
     same non-persistence rationale as run_drafting.py's drafted text.
     """
+    tools.clear_cache()  # a warm Lambda container must never reuse a previous invocation's data
     raw, observed = _call_model(SYSTEM_PROMPT, question, split)
     try:
         parsed = _parse_model_response(raw)

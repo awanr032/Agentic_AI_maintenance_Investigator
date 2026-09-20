@@ -29,6 +29,12 @@ infra/lambda_build/package/
 infra/lambda_build/build.zip
 infra/lambda_build_query/package/
 infra/lambda_build_query/build.zip
+infra/lambda_build_pattern/package/
+infra/lambda_build_pattern/build.zip
 
 infra/terraform/payload.json
 infra/terraform/response.json
+
+# scratch test payloads from testing deployed Lambdas via aws lambda invoke
+/payload.json
+/response.json
