@@ -283,6 +283,15 @@ def _parse_model_response(raw: str) -> dict[str, Any]:
     if raw.startswith("```"):
         raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
         raw = re.sub(r"\n?```$", "", raw)
+    raw = raw.strip()
+    if not raw.startswith("{"):
+        # Applied proactively after finding the identical vulnerability in
+        # pattern_agent.py's copy of this function via a real run: the model
+        # can preface its JSON with a plain sentence, which json.loads()
+        # rejects outright even though the JSON itself is well-formed.
+        start = raw.find("{")
+        if start != -1:
+            raw = raw[start:]
     return json.loads(raw)
 
 

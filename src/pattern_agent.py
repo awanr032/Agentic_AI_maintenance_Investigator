@@ -169,7 +169,30 @@ def _run_deepseek(system_prompt: str, user_prompt: str, split: str) -> tuple[str
         )
         message = response.choices[0].message
         if not message.tool_calls:
-            return message.content or "", observed
+            content = message.content or ""
+            if _is_valid_final_answer(content):
+                return content, observed
+            # Malformed/prose-wrapped JSON on what looked like the final
+            # turn: correct it WITHOUT discarding the conversation so far.
+            # The old behavior (a top-level retry starting a brand-new
+            # messages=[system, user] list) threw away every tool result
+            # already gathered — caught via a real deployed run where the
+            # model had already investigated 25+ asset types but the
+            # discard-and-restart retry told the caller "[]" (zero
+            # findings), the same class of bug already found and fixed in
+            # query_agent.py but never ported back here.
+            messages.append({"role": "assistant", "content": content})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "That wasn't valid JSON in the required shape. Respond with ONLY "
+                        '{"findings": [...]}, using the tool results already gathered above — '
+                        "no more tool calls needed."
+                    ),
+                }
+            )
+            continue
         messages.append(
             {
                 "role": "assistant",
@@ -217,7 +240,21 @@ def _run_claude(system_prompt: str, user_prompt: str, split: str) -> tuple[str, 
         )
         tool_uses = [b for b in response.content if b.type == "tool_use"]
         if not tool_uses:
-            return "".join(b.text for b in response.content if b.type == "text"), observed
+            content = "".join(b.text for b in response.content if b.type == "text")
+            if _is_valid_final_answer(content):
+                return content, observed
+            messages.append({"role": "assistant", "content": response.content})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "That wasn't valid JSON in the required shape. Respond with ONLY "
+                        '{"findings": [...]}, using the tool results already gathered above — '
+                        "no more tool calls needed."
+                    ),
+                }
+            )
+            continue
         messages.append({"role": "assistant", "content": response.content})
         tool_results = []
         for tu in tool_uses:
@@ -243,7 +280,28 @@ def _parse_model_response(raw: str) -> dict[str, Any]:
     if raw.startswith("```"):
         raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
         raw = re.sub(r"\n?```$", "", raw)
+    raw = raw.strip()
+    if not raw.startswith("{"):
+        # Found via a real run: the model prefaced its JSON with a plain
+        # sentence ("I have enough to report the genuinely recurring
+        # patterns.\n\n{...}"), which json.loads() rejects outright even
+        # though the JSON itself was perfectly well-formed -- extract from
+        # the first '{' rather than failing on a preamble alone.
+        start = raw.find("{")
+        if start != -1:
+            raw = raw[start:]
     return json.loads(raw)
+
+
+def _is_valid_final_answer(raw: str) -> bool:
+    """Used inside the tool-calling loops to decide whether a turn with no
+    tool calls is genuinely done, or needs an in-conversation correction —
+    see the loops' comments for why this replaced a discard-and-restart retry."""
+    try:
+        parsed = _parse_model_response(raw)
+        return isinstance(parsed.get("findings"), list)
+    except (json.JSONDecodeError, AttributeError):
+        return False
 
 
 def _verify_against_observed(finding: PatternFinding, observed_records: list[dict[str, Any]]) -> bool:
