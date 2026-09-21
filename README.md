@@ -42,29 +42,44 @@ Validation both agreed and were both wrong.
 
 ## Deployed
 
-Two of the five agents run live on AWS Lambda, provisioned via Terraform
-(`infra/terraform/`):
+Three of the five agents run live on AWS Lambda, provisioned via Terraform
+(`infra/terraform/`), each with its own separately-scoped IAM role (least privilege: no
+role has a permission its agent doesn't specifically need):
 
 - **Extraction Agent** — IAM role scoped to exactly two permissions, the DeepSeek API key
   in SSM Parameter Store (never a plaintext env var), and guardrails (input length cap,
   generic error responses) appropriate for a metered API behind a public endpoint.
-- **Query Agent** — reads the validated corpus from S3 (`src/store.py`'s S3 backend,
-  populated via `scripts/migrate_store_to_s3.py`) instead of local disk. Its own,
-  separately-scoped IAM role (least privilege: only this agent can touch the S3 store).
-  Its first live test hit a real deployment bug — `tools.py` scans the whole split on every
-  tool call, which the one-object-per-record S3 layout turned into ~500 sequential network
-  round-trips, timing out at 30s. Fixed by parallelizing the reads (verified: 500 records in
-  ~4s) and raising the timeout to 60s as a margin, not a substitute for the fix.
+- **Query Agent** and **Pattern Agent** — read/write the validated corpus via S3
+  (`src/store.py`'s S3 backend, populated via `scripts/migrate_store_to_s3.py`) instead of
+  local disk. Both surfaced real bugs on their first live deployment, each found and fixed
+  the same way as every bug in this project — evidence first, root cause, targeted fix,
+  re-verified:
+  - **Sequential S3 refetch timeout** (Query Agent): `tools.py` scans the whole split on
+    every tool call; the one-object-per-record S3 layout turned that into ~500 sequential
+    network round-trips, timing out the Lambda at 30s. Fixed by parallelizing the reads
+    (verified: 500 records in ~4s) and adding a per-invocation cache so multiple tool calls
+    in one run share a single fetch — applied proactively to Pattern Agent too, since its
+    whole job is investigating multiple asset types per run.
+  - **Verification loophole** (Pattern Agent): a live run returned a finding with
+    `occurrence_count: 1` and **no example texts at all** — checked against the real data
+    directly and confirmed fabricated. Root cause: the verification check's subset test
+    (`set(finding.examples) <= set(record.examples)`) is vacuously true when the
+    finding's examples are empty. Fixed by requiring non-empty examples, justified
+    structurally (a real record can never have zero examples).
+  - **Discard-context retry** (both agents): when the model's JSON response had a prose
+    preamble the parser didn't expect, the retry logic threw away the entire conversation —
+    including every tool result already gathered — and asked again with "no more tool
+    calls," producing an empty result despite having real data moments earlier. Fixed by
+    validating and correcting within the same conversation instead of restarting it.
 
-Both verified end-to-end via direct invocation, matching local output exactly. See
+All three verified end-to-end via direct invocation, matching local output exactly. See
 `docs/design-spec.md` §7 for the full deployment writeup, including a known open issue
-shared by both (the public Function URL on each is currently blocked by what looks like a
+shared by all three (each Function URL is currently blocked by what looks like a
 new-AWS-account anti-abuse restriction — worked around by calling them directly via
 CLI/console instead).
 
-Validation, Pattern, and Drafting Agents are built and tested locally but not yet deployed
-— Pattern and Drafting would reuse the same S3-backed `store.py` Query Agent already proves
-out; Validation would need its own Lambda following the same pattern as Extraction.
+Validation and Drafting Agents are built and tested locally but not yet deployed — both
+would reuse the same S3-backed `store.py` pattern the other three already prove out.
 
 ## Setup
 
