@@ -252,9 +252,21 @@ def _verify_against_observed(finding: PatternFinding, observed_records: list[dic
     finding that doesn't match any observed record is fabricated (a wrong
     count, an invented example) and is dropped, not trusted on the model's
     say-so — same principle as the structural checks elsewhere in this
-    codebase."""
+    codebase.
+
+    Requires example_source_texts to be non-empty: found via a real
+    deployed run reporting an "occurrence_count": 1 finding with
+    example_source_texts: [] that this check WRONGLY accepted, because an
+    empty set is a subset of any set — the subset check alone was
+    vacuously true with no real evidence attached. Every genuine
+    get_failure_history() record with occurrence_count >= 1 necessarily has
+    at least one example (that's how occurrences are counted in the first
+    place — see tools.py), so a real match can never have empty examples;
+    only a fabricated one could satisfy the old check this way.
+    """
     return any(
         record["occurrence_count"] == finding.occurrence_count
+        and finding.example_source_texts
         and set(finding.example_source_texts) <= set(record["example_source_texts"])
         for record in observed_records
     )
