@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ask The Investigator</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders:wght@600;700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#eef1ee; --surface:#ffffff; --surface-2:#e3e9e3;
+  --ink:#1a1f1b; --muted:#5b655d; --border:#d2d9d3;
+  --accent:#bd5019; --accent-ink:#fff8f3; --accent-soft:#f4e0d0;
+  --good:#2c7a4d; --good-soft:#dcf0e2;
+  --warn:#93650e; --warn-soft:#f4e5c4;
+  --bad:#ab362b; --bad-soft:#f6dcd8;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#14181a; --surface:#1b2124; --surface-2:#222a2c;
+    --ink:#e8ece8; --muted:#98a49d; --border:#2c3538;
+    --accent:#e2823f; --accent-ink:#1c1006; --accent-soft:#3a2717;
+    --good:#5ecb8b; --good-soft:#153524; --warn:#e0b458; --warn-soft:#382c10;
+    --bad:#ef8c7f; --bad-soft:#391c17;
+  }
+}
+*{box-sizing:border-box;}
+body{
+  background:var(--bg); color:var(--ink); margin:0;
+  font-family:'Public Sans',-apple-system,'Segoe UI',sans-serif;
+  line-height:1.6;
+}
+.page{max-width:680px; margin:0 auto; padding-inline:20px; padding-block:36px 80px;}
+code{font-family:'IBM Plex Mono',ui-monospace,monospace;}
+.kicker{font-family:'IBM Plex Mono',monospace; font-size:0.72rem; font-weight:500; letter-spacing:0.14em; text-transform:uppercase; color:var(--accent); margin-bottom:12px;}
+h1{font-family:'Big Shoulders',sans-serif; font-weight:800; font-size:clamp(2.1rem,7vw,3rem); line-height:0.95; margin:0 0 12px;}
+.dek{color:var(--muted); font-size:1.02rem; max-width:56ch; margin:0 0 8px;}
+.panel{background:var(--surface); border:1px solid var(--border); padding:22px; margin:26px 0 18px;}
+label{display:block; font-family:'IBM Plex Mono',monospace; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:8px;}
+.input-row{display:flex; gap:10px; flex-wrap:wrap;}
+#question{flex:1; min-width:200px; font-family:'Public Sans',sans-serif; font-size:1rem; padding:12px 14px; border:1px solid var(--border); border-radius:4px; background:var(--bg); color:var(--ink);}
+#question:focus{outline:2px solid var(--accent); outline-offset:1px;}
+button{font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:0.85rem; letter-spacing:0.03em; background:var(--accent); color:var(--accent-ink); border:none; border-radius:4px; padding:0 22px; cursor:pointer; text-transform:uppercase;}
+button:hover:not(:disabled){filter:brightness(1.08);}
+button:disabled{opacity:0.55; cursor:default;}
+.examples{display:flex; gap:8px; flex-wrap:wrap; margin-top:14px;}
+.example-chip{font-family:'IBM Plex Mono',monospace; font-size:0.74rem; padding:6px 12px; border:1px solid var(--border); border-radius:999px; background:transparent; color:var(--muted); cursor:pointer; text-transform:none;}
+.example-chip:hover{border-color:var(--accent); color:var(--accent);}
+.answer-panel{background:var(--surface); border:1px solid var(--border); border-top:4px solid var(--accent); padding:24px; min-height:120px;}
+.answer-panel.idle{border-top-color:var(--border); display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:0.92rem; text-align:center;}
+.status-row{display:flex; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap;}
+.pill{font-family:'IBM Plex Mono',monospace; font-size:0.66rem; font-weight:600; padding:3px 10px; border-radius:999px; text-transform:uppercase; letter-spacing:0.03em;}
+.pill.good{background:var(--good-soft); color:var(--good);}
+.pill.warn{background:var(--warn-soft); color:var(--warn);}
+.pill.bad{background:var(--bad-soft); color:var(--bad);}
+.answer-text{font-size:1.02rem; margin:0 0 16px;}
+.q-echo{font-family:'IBM Plex Mono',monospace; font-size:0.78rem; color:var(--muted); margin:0 0 14px; padding-bottom:12px; border-bottom:1px solid var(--border);}
+details{margin-top:6px;}
+summary{font-family:'IBM Plex Mono',monospace; font-size:0.72rem; color:var(--muted); cursor:pointer; text-transform:uppercase; letter-spacing:0.03em;}
+.facts{margin-top:12px; max-height:220px; overflow-y:auto; border:1px solid var(--border); background:var(--bg); padding:10px 12px; font-family:'IBM Plex Mono',monospace; font-size:0.74rem;}
+.fact-row{padding:4px 0; border-bottom:1px solid var(--border);}
+.fact-row:last-child{border-bottom:none;}
+.spinner{width:16px; height:16px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin 0.7s linear infinite; flex-shrink:0;}
+@keyframes spin{to{transform:rotate(360deg);}}
+@media (prefers-reduced-motion:reduce){.spinner{animation:none;}}
+footer{margin-top:34px; padding-top:18px; border-top:1px solid var(--border); font-size:0.82rem; color:var(--muted);}
+footer a{color:var(--accent);}
+@media (max-width:480px){.input-row{flex-direction:column;} button{padding:12px; width:100%;}}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Live &middot; Query Agent &middot; AWS Lambda + API Gateway</div>
+  <h1>Ask The Investigator</h1>
+  <p class="dek">This box talks directly to a real AI agent running on AWS, reading 500 real heavy-equipment repair notes. It answers using only real, countable evidence — and says so plainly when it doesn't have data for something, rather than guessing.</p>
+
+  <div class="panel">
+    <label for="question">Your question</label>
+    <div class="input-row">
+      <input id="question" type="text" value="What are the most common failures for pumps?" autocomplete="off" />
+      <button id="ask-btn" type="button">Ask</button>
+    </div>
+    <div class="examples">
+      <button type="button" class="example-chip" data-q="What are the top 5 most common asset types in the data?">top 5 asset types</button>
+      <button type="button" class="example-chip" data-q="What issues are reported for filters?">filter issues</button>
+      <button type="button" class="example-chip" data-q="What is the average cost of repairing a leaking pump?">repair cost (should decline)</button>
+      <button type="button" class="example-chip" data-q="What is the failure rate of the warp core?">warp core (should decline)</button>
+    </div>
+  </div>
+
+  <div id="answer" class="answer-panel idle">Ask a question above to see a real, evidence-backed answer appear here.</div>
+
+  <footer>
+    <p>Backed by <a href="https://github.com/nlp-tlp/maintie" target="_blank" rel="noopener">MaintIE</a>, a public, MIT-licensed maintenance-record dataset. Part of <em>The Maintenance Investigator</em> project — a five-agent pipeline for turning messy repair notes into structured, trustworthy data, running end-to-end on AWS.</p>
+  </footer>
+</div>
+
+<script>
+const API_URL = "https://qf9yewsrxd.execute-api.us-east-1.amazonaws.com/ask";
+const input = document.getElementById('question');
+const btn = document.getElementById('ask-btn');
+const answerEl = document.getElementById('answer');
+
+function escapeHtml(s){
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function ask(question){
+  if(!question || !question.trim()) return;
+  btn.disabled = true;
+  answerEl.className = 'answer-panel';
+  answerEl.innerHTML = `<div class="status-row"><div class="spinner"></div><span style="color:var(--muted); font-size:0.92rem;">Asking the Detective's tools for real data&hellip;</span></div>`;
+
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({question: question, split: 'silver'})
+    });
+    const data = await res.json();
+
+    if(!res.ok){
+      answerEl.innerHTML = `<div class="status-row"><span class="pill bad">Error</span></div><p class="answer-text">${escapeHtml(data.error || 'Something went wrong on the server side.')}</p>`;
+      return;
+    }
+
+    const grounded = data.grounded;
+    const pillClass = grounded ? 'good' : 'warn';
+    const pillText = grounded ? 'Evidence-checked' : 'Unverified number flagged';
+    const facts = Array.isArray(data.supporting_facts) ? data.supporting_facts : [];
+
+    let factsHtml = '';
+    if(facts.length){
+      factsHtml = `<details><summary>${facts.length} real data record(s) this answer drew on</summary><div class="facts">` +
+        facts.slice(0, 30).map(f => `<div class="fact-row">${escapeHtml(JSON.stringify(f))}</div>`).join('') +
+        (facts.length > 30 ? `<div class="fact-row">&hellip; and ${facts.length - 30} more</div>` : '') +
+        `</div></details>`;
+    }
+
+    answerEl.innerHTML = `
+      <div class="q-echo">Q: ${escapeHtml(data.question || question)}</div>
+      <div class="status-row"><span class="pill ${pillClass}">${pillText}</span></div>
+      <p class="answer-text">${escapeHtml(data.answer)}</p>
+      ${factsHtml}
+    `;
+  } catch(err){
+    answerEl.innerHTML = `<div class="status-row"><span class="pill bad">Network error</span></div><p class="answer-text">Couldn't reach the agent (${escapeHtml(String(err))}). It may be a cold start — try again in a few seconds.</p>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+btn.addEventListener('click', () => ask(input.value));
+input.addEventListener('keydown', e => { if(e.key === 'Enter') ask(input.value); });
+document.querySelectorAll('.example-chip').forEach(chip => {
+  chip.addEventListener('click', () => { input.value = chip.dataset.q; ask(chip.dataset.q); });
+});
+</script>
+</body>
+</html>
