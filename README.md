@@ -79,14 +79,22 @@ API Gateway (`infra/terraform/query_agent_api.tf`) instead of its Function URL. 
 invokes Lambda through a different permission entirely (`lambda:InvokeFunction` via its own
 resource policy, not `lambda:InvokeFunctionUrl`), which turned out to sidestep the
 restriction completely — confirmed working, no 403. There's a live demo page built on top
-of it: **[Ask The Investigator](https://claude.ai/artifact/48PGvKRZeR3F3gmPaKrBkB)**, a real
-webpage anyone can open and ask a question, no terminal or AWS credentials required.
+of it, **"Ask The Investigator"** (`infra/web/index.html`, deployed via `infra/terraform/web.tf`)
+— a real webpage anyone can open and ask a question, no terminal or AWS credentials required.
 
-Getting there surfaced one more real bug: the first live API Gateway request failed with
-`AttributeError: module 'src.tools' has no attribute 'clear_cache'` — the Query Agent
-Lambda's packaged `tools.py` had gone stale after the caching fix (WO-12's fix) was added
-to `src/tools.py` but never re-copied into `infra/lambda_build_query/package/`, a plain
-packaging oversight rather than a design flaw. Confirmed by diffing every shared source
+It's hosted as a genuine S3 static website, not a Claude artifact — that was the first
+attempt, and it failed for every real user with `TypeError: Failed to fetch`. Root cause:
+published Claude artifacts run in a sandbox that blocks `fetch()` to arbitrary external
+hosts; no CORS configuration on the AWS side can work around a client-side platform
+restriction like that. Re-hosting the identical page as a real, independent S3 website
+(so the whole demo — frontend and backend — lives under this project's own AWS account)
+fixed it, verified both by direct testing and by a real user in a real browser.
+
+Getting the API Gateway endpoint itself working surfaced one more real bug: the first live
+request failed with `AttributeError: module 'src.tools' has no attribute 'clear_cache'` —
+the Query Agent Lambda's packaged `tools.py` had gone stale after the caching fix (WO-12's
+fix) was added to `src/tools.py` but never re-copied into `infra/lambda_build_query/package/`,
+a plain packaging oversight rather than a design flaw. Confirmed by diffing every shared source
 file against both Lambda packages; only that one file was out of sync. Fixed by re-copying
 and rebuilding.
 
