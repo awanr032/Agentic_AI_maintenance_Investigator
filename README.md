@@ -72,11 +72,23 @@ role has a permission its agent doesn't specifically need):
     calls," producing an empty result despite having real data moments earlier. Fixed by
     validating and correcting within the same conversation instead of restarting it.
 
-All three verified end-to-end via direct invocation, matching local output exactly. See
-`docs/design-spec.md` §7 for the full deployment writeup, including a known open issue
-shared by all three (each Function URL is currently blocked by what looks like a
-new-AWS-account anti-abuse restriction — worked around by calling them directly via
-CLI/console instead).
+All three verified end-to-end via direct invocation, matching local output exactly. Each
+agent's own Lambda Function URL remains blocked by what looks like a new-AWS-account
+anti-abuse restriction — but **Query Agent is now also genuinely publicly callable**, via
+API Gateway (`infra/terraform/query_agent_api.tf`) instead of its Function URL. API Gateway
+invokes Lambda through a different permission entirely (`lambda:InvokeFunction` via its own
+resource policy, not `lambda:InvokeFunctionUrl`), which turned out to sidestep the
+restriction completely — confirmed working, no 403. There's a live demo page built on top
+of it: **[Ask The Investigator](https://claude.ai/artifact/48PGvKRZeR3F3gmPaKrBkB)**, a real
+webpage anyone can open and ask a question, no terminal or AWS credentials required.
+
+Getting there surfaced one more real bug: the first live API Gateway request failed with
+`AttributeError: module 'src.tools' has no attribute 'clear_cache'` — the Query Agent
+Lambda's packaged `tools.py` had gone stale after the caching fix (WO-12's fix) was added
+to `src/tools.py` but never re-copied into `infra/lambda_build_query/package/`, a plain
+packaging oversight rather than a design flaw. Confirmed by diffing every shared source
+file against both Lambda packages; only that one file was out of sync. Fixed by re-copying
+and rebuilding.
 
 Validation and Drafting Agents are built and tested locally but not yet deployed — both
 would reuse the same S3-backed `store.py` pattern the other three already prove out.
